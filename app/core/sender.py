@@ -13,14 +13,15 @@ class Sender:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(1.0) # RDT 3.0 timer capability
         self.state = 0  # WAIT_CALL_0
+        self.last_sndpkt = b''
 
     def rdt_send(self, data: bytes):
         if self.state == 0:  # WAIT_CALL_0
             # make_pkt(0, data, checksum)
-            sndpkt = Packet.make_packet(Packet.TYPE_DATA, 0, data)
+            self.last_sndpkt = Packet.make_packet(Packet.TYPE_DATA, 0, data)
 
             # udt_send(sndpkt)
-            self.sock.sendto(sndpkt, self.target_address)
+            self.sock.sendto(self.last_sndpkt, self.target_address)
 
             # start_timer (handled by socket timeout)
             # Transition
@@ -28,8 +29,8 @@ class Sender:
             self.wait_for_ack_0()
 
         elif self.state == 2:  # WAIT_CALL_1
-            sndpkt = Packet.make_packet(Packet.TYPE_DATA, 1, data)
-            self.sock.sendto(sndpkt, self.target_address)
+            self.last_sndpkt = Packet.make_packet(Packet.TYPE_DATA, 1, data)
+            self.sock.sendto(self.last_sndpkt, self.target_address)
             self.state = 3  # WAIT_ACK_1
             self.wait_for_ack_1()
 
@@ -49,8 +50,7 @@ class Sender:
                     # Transition
                     self.state = 2  # WAIT_CALL_1
             except socket.timeout:
-                # Timeout logic deferred to subsequent implementation steps
-                break
+                self.sock.sendto(self.last_sndpkt, self.target_address)
 
     def wait_for_ack_1(self):
         while True:
@@ -64,4 +64,4 @@ class Sender:
                 if not is_corrupt and packet_type == Packet.TYPE_ACK and seq_num == 1:
                     self.state = 0  # WAIT_CALL_0
             except socket.timeout:
-                break
+                self.sock.sendto(self.last_sndpkt, self.target_address)
