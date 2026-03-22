@@ -27,17 +27,41 @@ class Sender:
             self.state = 1  # WAIT_ACK_0
             self.wait_for_ack_0()
 
+        elif self.state == 2:  # WAIT_CALL_1
+            sndpkt = Packet.make_packet(Packet.TYPE_DATA, 1, data)
+            self.sock.sendto(sndpkt, self.target_address)
+            self.state = 3  # WAIT_ACK_1
+            self.wait_for_ack_1()
+
     def wait_for_ack_0(self):
         # Blocking wait for ACK
-        try:
-            rcvpkt, _ = self.sock.recvfrom(1024)
-            packet_type, seq_num, payload, is_corrupt = Packet.extract_packet(rcvpkt)
+        while True:
+            try:
+                rcvpkt, _ = self.sock.recvfrom(1024) # This is when the timer actually starts
+                packet_type, seq_num, payload, is_corrupt = Packet.extract_packet(rcvpkt)
 
-            # rdt_rcv(rcvpkt) && notcorrupt(rcvpkt) && isACK(rcvpkt,0)
-            if not is_corrupt and packet_type == Packet.TYPE_ACK and seq_num == 0:
-                # stop_timer (implicit upon receiving)
-                # Transition
-                self.state = 2  # WAIT_CALL_1
-        except socket.timeout:
-            # Timeout logic deferred to subsequent implementation steps
-            pass
+                if is_corrupt or (packet_type == Packet.TYPE_ACK and seq_num == 1):
+                    continue  # Null action
+
+                # rdt_rcv(rcvpkt) && notcorrupt(rcvpkt) && isACK(rcvpkt,0)
+                if not is_corrupt and packet_type == Packet.TYPE_ACK and seq_num == 0:
+                    # stop_timer (implicit upon receiving)
+                    # Transition
+                    self.state = 2  # WAIT_CALL_1
+            except socket.timeout:
+                # Timeout logic deferred to subsequent implementation steps
+                break
+
+    def wait_for_ack_1(self):
+        while True:
+            try:
+                rcvpkt, _ = self.sock.recvfrom(1024)
+                packet_type, seq_num, payload, is_corrupt = Packet.extract_packet(rcvpkt)
+
+                if is_corrupt or (packet_type == Packet.TYPE_ACK and seq_num == 0):
+                    continue  # Null action (Λ)
+
+                if not is_corrupt and packet_type == Packet.TYPE_ACK and seq_num == 1:
+                    self.state = 0  # WAIT_CALL_0
+            except socket.timeout:
+                break
