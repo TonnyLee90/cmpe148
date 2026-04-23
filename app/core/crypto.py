@@ -5,12 +5,16 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import os
 
+from cryptography.hazmat.primitives.asymmetric import dh
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import os
+
+
 class CryptoManager:
     def __init__(self, parameters: dh.DHParameters = None):
-        """
-        Generates 2048-bit DH parameters if none provided.
-        Generation takes time. In production, pre-generate or use RFC 3526 standards.
-        """
         self.parameters = parameters or dh.generate_parameters(generator=2, key_size=2048)
         self.private_key = self.parameters.generate_private_key()
         self.public_key = self.private_key.public_key()
@@ -41,15 +45,39 @@ class CryptoManager:
 
         self.aesgcm = AESGCM(derived_key)
 
+        # State Exposure
+        print("\n[CRYPTOGRAPHY] --- Session Key Derivation ---")
+        print(f"[CRYPTOGRAPHY] Local Private Key (x): 0x{hex(self.private_key.private_numbers().x)[2:32]}...")
+        print(f"[CRYPTOGRAPHY] Local Public Key (y):  0x{hex(self.public_key.public_numbers().y)[2:32]}...")
+        print(f"[CRYPTOGRAPHY] Raw Shared Secret:     0x{shared_secret.hex()[:30]}...")
+        print(f"[CRYPTOGRAPHY] Derived AES-256 Key:   0x{derived_key.hex()}")
+        print("[CRYPTOGRAPHY] ------------------------------\n")
+
     def encrypt(self, plaintext: bytes) -> bytes:
         nonce = os.urandom(12)
         ciphertext = self.aesgcm.encrypt(nonce, plaintext, None)
-        return nonce + ciphertext
+        payload = nonce + ciphertext
+
+        # State Exposure
+        print(f"\n[CRYPTOGRAPHY] --- Encryption Operation ---")
+        print(f"[CRYPTOGRAPHY] Plaintext:  {plaintext}")
+        print(f"[CRYPTOGRAPHY] Nonce (12B): 0x{nonce.hex()}")
+        print(f"[CRYPTOGRAPHY] Ciphertext: 0x{ciphertext.hex()}")
+        print(f"[CRYPTOGRAPHY] Payload:    0x{payload.hex()}")
+
+        return payload
 
     def decrypt(self, ciphertext: bytes) -> bytes:
         nonce = ciphertext[:12]
         actual_ciphertext = ciphertext[12:]
-        return self.aesgcm.decrypt(nonce, actual_ciphertext, None)
 
-if __name__ == "__main__":
-    pass
+        # State Exposure
+        print(f"\n[CRYPTOGRAPHY] --- Decryption Operation ---")
+        print(f"[CRYPTOGRAPHY] Raw Payload: 0x{ciphertext.hex()}")
+        print(f"[CRYPTOGRAPHY] Extr Nonce:  0x{nonce.hex()}")
+        print(f"[CRYPTOGRAPHY] Extr Cipher: 0x{actual_ciphertext.hex()}")
+
+        plaintext = self.aesgcm.decrypt(nonce, actual_ciphertext, None)
+        print(f"[CRYPTOGRAPHY] Decrypted:   {plaintext}")
+
+        return plaintext
