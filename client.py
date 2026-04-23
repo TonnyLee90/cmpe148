@@ -1,15 +1,45 @@
 from app.core.sender import Sender
 import time
 
+import socket
+import time
+from app.core.crypto import CryptoManager
+
+
+def execute_client_handshake(target_ip: str, handshake_port: int) -> CryptoManager:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(5.0)
+
+    print("[HANDSHAKE] Generating DH Parameters (This may take a moment)...")
+    crypto = CryptoManager()
+
+    payload = crypto.get_parameter_bytes() + b'|||' + crypto.get_public_bytes()
+
+    print("[HANDSHAKE] Transmitting parameters and public key...")
+    sock.sendto(payload, (target_ip, handshake_port))
+
+    try:
+        server_pub_bytes, _ = sock.recvfrom(4096)
+        crypto.establish_session(server_pub_bytes)
+        print("[HANDSHAKE] Session key established.")
+    except socket.timeout:
+        raise TimeoutError("Handshake failed: No response from server.")
+    finally:
+        sock.close()
+
+    return crypto
+
+
 if __name__ == "__main__":
-    # Replace with the actual IP address of the server device
-    TARGET_IP = "10.0.0.222"
-    TARGET_PORT = 12000
+    TARGET_IP = "10.0.0.222"  # Update to exact server IP
+    HANDSHAKE_PORT = 11999
+    RDT_PORT = 12000
+    NUM_PACKETS = 10
 
-    print(f"Initializing RDT 3.0 Sender targetting {TARGET_IP}:{TARGET_PORT}")
-    app_client = Sender(TARGET_IP, TARGET_PORT)
+    client_crypto = execute_client_handshake(TARGET_IP, HANDSHAKE_PORT)
 
-    NUM_PACKETS = 2000
+    print(f"Initializing Secure RDT 3.0 Sender targeting {TARGET_IP}:{RDT_PORT}")
+    app_client = Sender(TARGET_IP, RDT_PORT)
 
     test_payloads = []
     if NUM_PACKETS >= 1:
@@ -23,8 +53,9 @@ if __name__ == "__main__":
         test_payloads.append(f"Packet {NUM_PACKETS}: Termination sequence.".encode('utf-8'))
 
     for payload in test_payloads:
-        print(f"[APPLICATION LAYER] Sending: {payload.decode('utf-8')}")
-        app_client.rdt_send(payload)
-        #time.sleep(0.2)
+        print(f"\n[APPLICATION LAYER] Original data: {payload.decode('utf-8')}")
+        encrypted_payload = client_crypto.encrypt(payload)
+        app_client.rdt_send(encrypted_payload)
+        time.sleep(1)
 
     print("Transmission complete.")
