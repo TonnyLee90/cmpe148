@@ -1,5 +1,5 @@
 import socket
-from packet import Packet
+from app.core.simple_packet import Packet
 
 # States
 # WAIT_CALL_0: 0
